@@ -1,3 +1,4 @@
+
 import type { LanguageCode } from '@/types';
 
 interface FAQ {
@@ -90,10 +91,30 @@ export const getFaqResponse = (text: string, lang: LanguageCode): string | null 
   return null;
 };
 
+const teluguToArabicDigitMap: { [key: string]: string } = {
+  '౦': '0', '౧': '1', '౨': '2', '౩': '3', '౪': '4',
+  '౫': '5', '౬': '6', '౭': '7', '౮': '8', '౯': '9',
+};
+
+const convertTeluguNumeralsToArabic = (teluguNumber: string): string => {
+  return teluguNumber.split('').map(char => teluguToArabicDigitMap[char] || char).join('');
+};
+
 export const checkForPinCode = (text: string): string | null => {
-  const pincodeRegex = /\b\d{6}\b/;
+  // Regex to match 6 ASCII digits (group 1) OR 6 Telugu digits (group 2)
+  // \b ensures word boundaries to avoid partial matches within larger numbers
+  const pincodeRegex = /\b(?:([0-9]{6})|([౦-౯]{6}))\b/;
   const match = text.match(pincodeRegex);
-  return match ? match[0] : null;
+
+  if (match) {
+    if (match[1]) { // ASCII digits matched (group 1)
+      return match[1];
+    }
+    if (match[2]) { // Telugu digits matched (group 2)
+      return convertTeluguNumeralsToArabic(match[2]);
+    }
+  }
+  return null;
 };
 
 export const checkPinCodeServiceability = (pinCode: string, lang: LanguageCode): string => {
