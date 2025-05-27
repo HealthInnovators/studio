@@ -10,7 +10,7 @@ import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useToast } from "@/hooks/use-toast";
 import { voiceInputToText } from '@/ai/flows/voice-input-to-text';
 import { textToSpeechOutput } from '@/ai/flows/text-to-speech-output';
-import { generateChatResponse } from '@/ai/flows/generate-chat-response-flow'; // Added import
+import { generateChatResponse } from '@/ai/flows/generate-chat-response-flow';
 import { 
   detectLanguage, 
   getFaqResponse, 
@@ -28,28 +28,49 @@ export default function AskTeRAPage() {
   const [selectedVoiceLanguage, setSelectedVoiceLanguage] = useState<LanguageCode>('en');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [activePlayingAudioId, setActivePlayingAudioId] = useState<string | null>(null);
+  
+  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [teluguVoiceWarningShown, setTeluguVoiceWarningShown] = useState(false);
 
   const { toast } = useToast();
   const { isRecording, startRecording, stopRecording, error: recorderError } = useAudioRecorder();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
 
-
   useEffect(() => {
+    const loadVoices = () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        const availableVoices = window.speechSynthesis.getVoices();
+        if (availableVoices.length > 0) {
+          setBrowserVoices(availableVoices);
+        }
+      }
+    };
+
+    loadVoices(); // Initial attempt
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = loadVoices; // Listener for changes
+    }
+    
     // Send initial welcome message from TeRA
     const welcomeLang = selectedVoiceLanguage; 
     const botMessage: Message = {
-      id: Date.now().toString(),
+      id: Date.now().toString() + '_welcome',
       text: welcomeMessages[welcomeLang],
       isUser: false,
       timestamp: new Date().toISOString(),
       language: welcomeLang,
     };
     
-    // Generate audio for welcome message
-    generateAndSetAudio(botMessage); // This will also add the message to state
+    generateAndSetAudio(botMessage);
     
-  }, []); 
+    return () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.onvoiceschanged = null; // Cleanup
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Welcome message effect, selectedVoiceLanguage is fixed at mount here for welcome.
 
 
   useEffect(() => {
@@ -67,7 +88,6 @@ export default function AskTeRAPage() {
      if (!message.isUser) {
       try {
         const ttsResult = await textToSpeechOutput({ text: message.text, language: message.language });
-        // Add message to state first, then update with audioDataUri
         setMessages(prev => {
             const existingMessage = prev.find(m => m.id === message.id);
             if (existingMessage) {
@@ -78,7 +98,6 @@ export default function AskTeRAPage() {
       } catch (error) {
         console.error("Error generating speech:", error);
         toast({ title: "Speech Generation Error", description: "Failed to generate audio for the bot's response.", variant: "destructive" });
-         // Ensure message is added even if TTS fails
         setMessages(prev => {
             if (!prev.find(m => m.id === message.id)) {
                 return [...prev, message];
@@ -99,8 +118,6 @@ export default function AskTeRAPage() {
       timestamp: new Date().toISOString(),
       language,
     };
-    // For bot messages, generateAndSetAudio will handle adding to messages state.
-    // For user messages, they are added directly here.
     if (isUser) {
        setMessages(prev => [...prev, newMessage]);
     }
@@ -111,7 +128,7 @@ export default function AskTeRAPage() {
     if (!textFromInput.trim()) return;
 
     const userLang = detectLanguage(textFromInput);
-    addMessage(textFromInput, true, userLang); // User message added here
+    addMessage(textFromInput, true, userLang);
     setInputValue('');
     setIsBotTyping(true);
 
@@ -126,27 +143,24 @@ export default function AskTeRAPage() {
       if (faqResponse) {
         botResponseText = faqResponse;
       } else {
-        // Call Genkit flow for general queries
         try {
           const chatResponse = await generateChatResponse({ text: textFromInput, language: userLang });
           if (chatResponse && chatResponse.responseText) {
             botResponseText = chatResponse.responseText;
           } else {
-            botResponseText = defaultResponses[userLang]; // Fallback if Genkit returns no text
+            botResponseText = defaultResponses[userLang]; 
           }
         } catch (error) {
           console.error("Error generating chat response:", error);
           toast({ title: "AI Response Error", description: "Failed to get a response from the AI. Using default response.", variant: "destructive" });
-          botResponseText = defaultResponses[userLang]; // Fallback on error
+          botResponseText = defaultResponses[userLang];
         }
       }
     }
     
-    // Simulate bot thinking time if not using LLM, or short delay if LLM was fast.
-    // If LLM call took time, this might be very short.
     await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
 
-    const botMessage = { // Create bot message object, ID will be set by addMessage or generateAndSetAudio
+    const botMessage = { 
       id: Date.now().toString() + '_bot_' + Math.random().toString(36).substring(2,9),
       text: botResponseText,
       isUser: false,
@@ -154,7 +168,7 @@ export default function AskTeRAPage() {
       language: botResponseLang,
     };
     
-    await generateAndSetAudio(botMessage); // This will add the message to state and generate audio.
+    await generateAndSetAudio(botMessage);
 
     setIsBotTyping(false);
   };
@@ -166,8 +180,6 @@ export default function AskTeRAPage() {
       try {
         const transcriptionResult = await voiceInputToText({ audioDataUri, language: selectedVoiceLanguage });
         setInputValue(transcriptionResult.transcription); 
-        // Optional: automatically send message after transcription
-        // await handleSendMessage(transcriptionResult.transcription);
       } catch (err) {
         console.error("Error transcribing audio:", err);
         toast({ title: "Transcription Error", description: "Could not transcribe audio. Please try again.", variant: "destructive" });
@@ -208,6 +220,19 @@ export default function AskTeRAPage() {
       };
     } else if (audioDataUri.startsWith('data:text/plain')) { 
         const textToSpeak = decodeURIComponent(audioDataUri.split(',')[1]);
+
+        if (language === 'te' && !teluguVoiceWarningShown && browserVoices.length > 0) {
+          const teluguVoice = browserVoices.find(voice => voice.lang === 'te-IN' || voice.lang.startsWith('te-'));
+          if (!teluguVoice) {
+            toast({
+              title: "Telugu Speech Note",
+              description: "Your browser may not have a dedicated Telugu voice. Speech quality might be affected or a default voice may be used.",
+              duration: 7000, 
+            });
+            setTeluguVoiceWarningShown(true); 
+          }
+        }
+
         speechSynthesisRef.current = new SpeechSynthesisUtterance(textToSpeak);
         speechSynthesisRef.current.lang = language === 'te' ? 'te-IN' : 'en-US';
         speechSynthesisRef.current.onend = () => {
@@ -242,8 +267,8 @@ export default function AskTeRAPage() {
         <ChatWindow 
             messages={messages.map(m => ({...m, isPlayingAudio: m.id === activePlayingAudioId && m.isPlayingAudio }))} 
             isBotTyping={isBotTyping} 
-            onPlayAudio={(uri, lang, messageId) => { // Ensure messageId is passed from MessageBubble
-                if(messageId) handlePlayAudio(uri, lang, messageId);
+            onPlayAudio={(uri, lang, msgId) => { 
+                if(msgId) handlePlayAudio(uri, lang, msgId);
             }}
         />
         <ChatInput
@@ -254,7 +279,10 @@ export default function AskTeRAPage() {
           onStartRecording={startRecording}
           onStopRecording={handleStopRecording}
           selectedVoiceLanguage={selectedVoiceLanguage}
-          onVoiceLanguageChange={setSelectedVoiceLanguage}
+          onVoiceLanguageChange={(lang) => {
+            setSelectedVoiceLanguage(lang);
+            setTeluguVoiceWarningShown(false); // Reset warning if language changes
+          }}
           isProcessing={isBotTyping}
           isTranscribing={isTranscribing}
         />
