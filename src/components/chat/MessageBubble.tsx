@@ -33,7 +33,7 @@ export function MessageBubble({ message, onPlayAudio }: MessageBubbleProps) {
           'max-w-[70%] rounded-xl px-4 py-3 shadow-md break-words',
           isUser
             ? 'bg-primary text-primary-foreground rounded-br-none'
-            : 'bg-[hsl(var(--bot-message-background))] text-[hsl(var(--bot-message-foreground))] rounded-bl-none border border-[hsl(var(--bot-message-border))]'
+            : 'bg-card text-card-foreground rounded-bl-none border'
         )}
       >
         <p className="text-sm">{text}</p>

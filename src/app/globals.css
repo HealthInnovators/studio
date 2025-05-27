@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -37,11 +38,6 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
-
-    /* Bot message bubble colors - Light Theme */
-    --bot-message-background: 120 50% 30%; /* Dark Green */
-    --bot-message-foreground: 0 0% 98%;   /* Almost White (for text on dark green) */
-    --bot-message-border: 120 50% 25%;     /* Slightly Darker Green for border */
   }
   .dark {
     --background: 210 10% 10%; /* Dark blue-grey */
@@ -76,11 +72,6 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
-
-    /* Bot message bubble colors - Dark Theme */
-    --bot-message-background: 120 40% 20%; /* Deep, desaturated dark green */
-    --bot-message-foreground: 120 40% 85%; /* Light, desaturated green for text */
-    --bot-message-border: 120 40% 15%;     /* Very dark green border */
   }
 }
 
