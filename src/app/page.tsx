@@ -11,24 +11,30 @@ import { useToast } from "@/hooks/use-toast";
 import { voiceInputToText } from '@/ai/flows/voice-input-to-text';
 import { textToSpeechOutput } from '@/ai/flows/text-to-speech-output';
 import { generateChatResponse } from '@/ai/flows/generate-chat-response-flow';
-import { 
-  detectLanguage, 
-  getFaqResponse, 
-  checkForPinCode, 
+import {
+  detectLanguage,
+  getFaqResponse,
+  checkForPinCode,
   checkPinCodeServiceability,
   defaultResponses,
   welcomeMessages
 } from '@/lib/chat-logic';
 import Image from 'next/image';
 
-export default function AskTeRAPage() {
+// Define props for a Next.js Page component in the App Router
+interface AskTeRAPageProps {
+  params: {}; // For the root page, params is an empty object
+  searchParams: { [key: string]: string | string[] | undefined };
+}
+
+export default function AskTeRAPage({ params, searchParams }: AskTeRAPageProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isBotTyping, setIsBotTyping] = useState(false);
   const [selectedVoiceLanguage, setSelectedVoiceLanguage] = useState<LanguageCode>('en');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [activePlayingAudioId, setActivePlayingAudioId] = useState<string | null>(null);
-  
+
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [teluguVoiceWarningShown, setTeluguVoiceWarningShown] = useState(false);
 
@@ -45,17 +51,19 @@ export default function AskTeRAPage() {
           setBrowserVoices(voices);
           console.log('Browser voices loaded on init/change:', voices.map(v => ({name: v.name, lang: v.lang, default: v.default })));
         } else {
+          // Voices might load asynchronously, onvoiceschanged will handle it.
           console.log('Browser voices list initially empty during loadAndSetVoices, waiting for onvoiceschanged.');
         }
       }
     };
 
     if (typeof window !== 'undefined' && window.speechSynthesis) {
+      // onvoiceschanged is the reliable event for when the voice list is populated/updated
       window.speechSynthesis.onvoiceschanged = loadAndSetVoices;
-      loadAndSetVoices(); // Attempt to load immediately
+      loadAndSetVoices(); // Attempt to load immediately in case they are already available
     }
-    
-    const welcomeLang = selectedVoiceLanguage; 
+
+    const welcomeLang = selectedVoiceLanguage;
     const botMessage: Message = {
       id: Date.now().toString() + '_welcome',
       text: welcomeMessages[welcomeLang],
@@ -63,17 +71,17 @@ export default function AskTeRAPage() {
       timestamp: new Date().toISOString(),
       language: welcomeLang,
     };
-    
-    generateAndSetAudio(botMessage); 
-    
+
+    generateAndSetAudio(botMessage);
+
     return () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null; 
-        window.speechSynthesis.cancel(); 
+        window.speechSynthesis.onvoiceschanged = null; // Clean up event listener
+        window.speechSynthesis.cancel(); // Cancel any ongoing speech
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, []); // Removed selectedVoiceLanguage from dependencies to ensure welcome message generates once on mount. Language for welcome can be set from initial selectedVoiceLanguage.
 
 
   useEffect(() => {
@@ -92,7 +100,7 @@ export default function AskTeRAPage() {
       try {
         const ttsResult = await textToSpeechOutput({ text: message.text, language: message.language });
         setMessages(prev => {
-            if (!prev.find(m => m.id === message.id)) { 
+            if (!prev.find(m => m.id === message.id)) {
                 return [...prev, {...message, audioDataUri: ttsResult.audioDataUri}];
             }
             return prev.map(m => m.id === message.id ? {...m, audioDataUri: ttsResult.audioDataUri} : m);
@@ -100,14 +108,14 @@ export default function AskTeRAPage() {
       } catch (error) {
         console.error("Error generating speech:", error);
         toast({ title: "Speech Generation Error", description: "Failed to generate audio for the bot's response.", variant: "destructive" });
-        setMessages(prev => { 
+        setMessages(prev => {
             if (!prev.find(m => m.id === message.id)) {
                 return [...prev, message];
             }
             return prev;
         });
       }
-    } else { 
+    } else {
        setMessages(prev => {
          if (!prev.find(m => m.id === message.id)) {
            return [...prev, message];
@@ -135,7 +143,7 @@ export default function AskTeRAPage() {
     if (!textFromInput.trim()) return;
 
     const userLang = detectLanguage(textFromInput);
-    addMessage(textFromInput, true, userLang); 
+    addMessage(textFromInput, true, userLang);
     setInputValue('');
     setIsBotTyping(true);
 
@@ -155,7 +163,7 @@ export default function AskTeRAPage() {
           if (chatResponse && chatResponse.responseText) {
             botResponseText = chatResponse.responseText;
           } else {
-            botResponseText = defaultResponses[userLang]; 
+            botResponseText = defaultResponses[userLang];
           }
         } catch (error) {
           console.error("Error generating chat response:", error);
@@ -164,17 +172,17 @@ export default function AskTeRAPage() {
         }
       }
     }
-    
-    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300)); 
 
-    const botMessage = { 
+    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+
+    const botMessage = {
       id: Date.now().toString() + '_bot_' + Math.random().toString(36).substring(2,9),
       text: botResponseText,
       isUser: false,
       timestamp: new Date().toISOString(),
       language: botResponseLang,
     };
-    
+
     await generateAndSetAudio(botMessage);
 
     setIsBotTyping(false);
@@ -186,7 +194,7 @@ export default function AskTeRAPage() {
     if (audioDataUri) {
       try {
         const transcriptionResult = await voiceInputToText({ audioDataUri, language: selectedVoiceLanguage });
-        setInputValue(transcriptionResult.transcription); 
+        setInputValue(transcriptionResult.transcription);
       } catch (err) {
         console.error("Error transcribing audio:", err);
         toast({ title: "Transcription Error", description: "Could not transcribe audio. Please try again.", variant: "destructive" });
@@ -195,7 +203,7 @@ export default function AskTeRAPage() {
     setIsTranscribing(false);
     return audioDataUri;
   };
-  
+
   const playAudioForMessage = (messageId: string, play: boolean) => {
     setMessages(prev => prev.map(m => m.id === messageId ? {...m, isPlayingAudio: play} : {...m, isPlayingAudio: false}));
   };
@@ -206,13 +214,13 @@ export default function AskTeRAPage() {
       audioRef.current.src = '';
     }
     if (window.speechSynthesis) {
-        window.speechSynthesis.cancel(); 
+        window.speechSynthesis.cancel();
     }
 
     playAudioForMessage(messageId, true);
     setActivePlayingAudioId(messageId);
 
-    if (audioDataUri.startsWith('data:audio')) { 
+    if (audioDataUri.startsWith('data:audio')) {
       audioRef.current = new Audio(audioDataUri);
       audioRef.current.play()
         .catch(e => {
@@ -225,32 +233,33 @@ export default function AskTeRAPage() {
         playAudioForMessage(messageId, false);
         setActivePlayingAudioId(null);
       };
-    } else if (audioDataUri.startsWith('data:text/plain')) { 
+    } else if (audioDataUri.startsWith('data:text/plain')) {
         const textToSpeak = decodeURIComponent(audioDataUri.split(',')[1]);
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
 
-        // Attempt to get the most current list of voices
         let currentVoices: SpeechSynthesisVoice[] = [];
         if (typeof window !== 'undefined' && window.speechSynthesis) {
-            currentVoices = window.speechSynthesis.getVoices();
+            currentVoices = window.speechSynthesis.getVoices(); // Get freshest list
+            if (currentVoices.length === 0 && browserVoices.length > 0) {
+              // If getVoices is empty now but was populated before, use the cached one.
+              // This can happen if onvoiceschanged hasn't fired yet for a very quick subsequent call.
+              currentVoices = browserVoices;
+            }
         }
-        
-        // Use fresh voices if available, otherwise fallback to state-cached voices
-        const voicesToSearch = currentVoices.length > 0 ? currentVoices : browserVoices;
-
-        console.log('TTS: Available voices for playback attempt:', voicesToSearch.map(v => ({name: v.name, lang: v.lang, default: v.default })));
+        console.log('TTS: Available voices for playback attempt:', currentVoices.map(v => ({name: v.name, lang: v.lang, default: v.default })));
 
         let chosenVoice: SpeechSynthesisVoice | undefined = undefined;
 
         if (language === 'te') {
             utterance.lang = 'te-IN';
             console.log('TTS: Attempting to find Telugu voice...');
-            chosenVoice = voicesToSearch.find(voice => 
-                (voice.lang === 'te-IN' || voice.lang.toLowerCase().startsWith('te-')) && 
+            // Prioritize female voices
+            chosenVoice = currentVoices.find(voice =>
+                (voice.lang === 'te-IN' || voice.lang.toLowerCase().startsWith('te-')) &&
                 voice.name.toLowerCase().includes('female')
             );
-            if (!chosenVoice) {
-                chosenVoice = voicesToSearch.find(voice => 
+            if (!chosenVoice) { // Fallback to any Telugu voice
+                chosenVoice = currentVoices.find(voice =>
                     voice.lang === 'te-IN' || voice.lang.toLowerCase().startsWith('te-')
                 );
             }
@@ -260,35 +269,36 @@ export default function AskTeRAPage() {
                 console.log('TTS: Using Telugu voice:', {name: chosenVoice.name, lang: chosenVoice.lang});
             } else {
                 console.log('TTS: No specific Telugu voice found in browser. Relying on lang attribute for Telugu.');
-                if (voicesToSearch.length > 0 && !teluguVoiceWarningShown) {
+                if (currentVoices.length > 0 && !teluguVoiceWarningShown) {
                     toast({
                         title: "Telugu Speech Note",
-                        description: "Your browser may not have a dedicated Telugu voice installed or enabled. Speech quality might be affected or a default voice may be used.",
+                        description: "Your browser may not have a dedicated Telugu voice. Speech quality might be affected or a default voice used.",
                         duration: 7000,
                     });
                     setTeluguVoiceWarningShown(true);
-                } else if (voicesToSearch.length === 0 && !teluguVoiceWarningShown) {
-                     console.log('TTS: Browser voice list is empty. Speech synthesis might not work or is still loading voices.');
+                } else if (currentVoices.length === 0 && !teluguVoiceWarningShown) {
+                     console.log('TTS: Browser voice list is empty. Speech synthesis might not work or voices are still loading.');
                       toast({
                         title: "Speech Voice Loading",
                         description: "Browser voices might still be loading. If speech doesn't work, please try again shortly.",
                         duration: 5000,
                     });
-                    setTeluguVoiceWarningShown(true); // Avoid repeated toasts for this session
+                    setTeluguVoiceWarningShown(true);
                 }
             }
         } else { // For English
             utterance.lang = 'en-US';
             console.log('TTS: Attempting to find English voice...');
-            chosenVoice = voicesToSearch.find(voice => 
-                (voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-')) && 
+            // Prioritize female voices
+            chosenVoice = currentVoices.find(voice =>
+                (voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-')) &&
                 voice.name.toLowerCase().includes('female')
             );
-            if (!chosenVoice) {
-                chosenVoice = voicesToSearch.find(voice => (voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-')) && voice.default);
+            if (!chosenVoice) { // Fallback to default English voice
+                chosenVoice = currentVoices.find(voice => (voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-')) && voice.default);
             }
-            if (!chosenVoice) {
-                chosenVoice = voicesToSearch.find(voice => voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-'));
+            if (!chosenVoice) { // Fallback to any English voice
+                chosenVoice = currentVoices.find(voice => voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-'));
             }
 
             if (chosenVoice) {
@@ -304,7 +314,7 @@ export default function AskTeRAPage() {
             setActivePlayingAudioId(null);
         };
         utterance.onerror = (e) => {
-            console.error("Speech synthesis error:", e.error, e);
+            console.error("Speech synthesis error:", e.error, e); // Log specific error
             toast({ title: "Speech Error", description: `Could not speak the response. Error: ${e.error}`, variant: "destructive" });
             playAudioForMessage(messageId, false);
             setActivePlayingAudioId(null);
@@ -328,10 +338,10 @@ export default function AskTeRAPage() {
             <CardTitle className="text-xl font-semibold">Ask TeRA</CardTitle>
           </div>
         </CardHeader>
-        <ChatWindow 
-            messages={messages.map(m => ({...m, isPlayingAudio: m.id === activePlayingAudioId && m.isPlayingAudio }))} 
-            isBotTyping={isBotTyping} 
-            onPlayAudio={(uri, lang, msgId) => { 
+        <ChatWindow
+            messages={messages.map(m => ({...m, isPlayingAudio: m.id === activePlayingAudioId && m.isPlayingAudio }))}
+            isBotTyping={isBotTyping}
+            onPlayAudio={(uri, lang, msgId) => {
                 if(msgId) handlePlayAudio(uri, lang, msgId);
             }}
         />
@@ -354,3 +364,5 @@ export default function AskTeRAPage() {
     </div>
   );
 }
+
+    
