@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -9,6 +10,7 @@ import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useToast } from "@/hooks/use-toast";
 import { voiceInputToText } from '@/ai/flows/voice-input-to-text';
 import { textToSpeechOutput } from '@/ai/flows/text-to-speech-output';
+import { generateChatResponse } from '@/ai/flows/generate-chat-response-flow'; // Added import
 import { 
   detectLanguage, 
   getFaqResponse, 
@@ -35,7 +37,7 @@ export default function AskTeRAPage() {
 
   useEffect(() => {
     // Send initial welcome message from TeRA
-    const welcomeLang = selectedVoiceLanguage; // Or a default language
+    const welcomeLang = selectedVoiceLanguage; 
     const botMessage: Message = {
       id: Date.now().toString(),
       text: welcomeMessages[welcomeLang],
@@ -45,9 +47,9 @@ export default function AskTeRAPage() {
     };
     
     // Generate audio for welcome message
-    generateAndSetAudio(botMessage);
+    generateAndSetAudio(botMessage); // This will also add the message to state
     
-  }, []); // Ensure this runs only once
+  }, []); 
 
 
   useEffect(() => {
@@ -65,10 +67,24 @@ export default function AskTeRAPage() {
      if (!message.isUser) {
       try {
         const ttsResult = await textToSpeechOutput({ text: message.text, language: message.language });
-        setMessages(prev => prev.map(m => m.id === message.id ? {...m, audioDataUri: ttsResult.audioDataUri} : m));
+        // Add message to state first, then update with audioDataUri
+        setMessages(prev => {
+            const existingMessage = prev.find(m => m.id === message.id);
+            if (existingMessage) {
+                return prev.map(m => m.id === message.id ? {...m, audioDataUri: ttsResult.audioDataUri} : m);
+            }
+            return [...prev, {...message, audioDataUri: ttsResult.audioDataUri}];
+        });
       } catch (error) {
         console.error("Error generating speech:", error);
         toast({ title: "Speech Generation Error", description: "Failed to generate audio for the bot's response.", variant: "destructive" });
+         // Ensure message is added even if TTS fails
+        setMessages(prev => {
+            if (!prev.find(m => m.id === message.id)) {
+                return [...prev, message];
+            }
+            return prev;
+        });
       }
     } else {
        setMessages(prev => [...prev, message]);
@@ -83,6 +99,8 @@ export default function AskTeRAPage() {
       timestamp: new Date().toISOString(),
       language,
     };
+    // For bot messages, generateAndSetAudio will handle adding to messages state.
+    // For user messages, they are added directly here.
     if (isUser) {
        setMessages(prev => [...prev, newMessage]);
     }
@@ -93,7 +111,7 @@ export default function AskTeRAPage() {
     if (!textFromInput.trim()) return;
 
     const userLang = detectLanguage(textFromInput);
-    addMessage(textFromInput, true, userLang);
+    addMessage(textFromInput, true, userLang); // User message added here
     setInputValue('');
     setIsBotTyping(true);
 
@@ -108,16 +126,35 @@ export default function AskTeRAPage() {
       if (faqResponse) {
         botResponseText = faqResponse;
       } else {
-        botResponseText = defaultResponses[userLang];
+        // Call Genkit flow for general queries
+        try {
+          const chatResponse = await generateChatResponse({ text: textFromInput, language: userLang });
+          if (chatResponse && chatResponse.responseText) {
+            botResponseText = chatResponse.responseText;
+          } else {
+            botResponseText = defaultResponses[userLang]; // Fallback if Genkit returns no text
+          }
+        } catch (error) {
+          console.error("Error generating chat response:", error);
+          toast({ title: "AI Response Error", description: "Failed to get a response from the AI. Using default response.", variant: "destructive" });
+          botResponseText = defaultResponses[userLang]; // Fallback on error
+        }
       }
     }
     
-    // Simulate bot thinking time
-    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+    // Simulate bot thinking time if not using LLM, or short delay if LLM was fast.
+    // If LLM call took time, this might be very short.
+    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
 
-    const botMessage = addMessage(botResponseText, false, botResponseLang);
-    await generateAndSetAudio(botMessage); // This will update the message in state with audioDataUri
-    setMessages(prev => [...prev.filter(m => m.id !== botMessage.id), botMessage]); // Ensure the latest version of botMessage is in state
+    const botMessage = { // Create bot message object, ID will be set by addMessage or generateAndSetAudio
+      id: Date.now().toString() + '_bot_' + Math.random().toString(36).substring(2,9),
+      text: botResponseText,
+      isUser: false,
+      timestamp: new Date().toISOString(),
+      language: botResponseLang,
+    };
+    
+    await generateAndSetAudio(botMessage); // This will add the message to state and generate audio.
 
     setIsBotTyping(false);
   };
@@ -128,7 +165,7 @@ export default function AskTeRAPage() {
     if (audioDataUri) {
       try {
         const transcriptionResult = await voiceInputToText({ audioDataUri, language: selectedVoiceLanguage });
-        setInputValue(transcriptionResult.transcription); // Fill input field
+        setInputValue(transcriptionResult.transcription); 
         // Optional: automatically send message after transcription
         // await handleSendMessage(transcriptionResult.transcription);
       } catch (err) {
@@ -137,7 +174,7 @@ export default function AskTeRAPage() {
       }
     }
     setIsTranscribing(false);
-    return audioDataUri; // Return for ChatInput if needed
+    return audioDataUri;
   };
   
   const playAudioForMessage = (messageId: string, play: boolean) => {
@@ -169,7 +206,7 @@ export default function AskTeRAPage() {
         playAudioForMessage(messageId, false);
         setActivePlayingAudioId(null);
       };
-    } else if (audioDataUri.startsWith('data:text/plain')) { // TTS passthrough
+    } else if (audioDataUri.startsWith('data:text/plain')) { 
         const textToSpeak = decodeURIComponent(audioDataUri.split(',')[1]);
         speechSynthesisRef.current = new SpeechSynthesisUtterance(textToSpeak);
         speechSynthesisRef.current.lang = language === 'te' ? 'te-IN' : 'en-US';
@@ -205,9 +242,8 @@ export default function AskTeRAPage() {
         <ChatWindow 
             messages={messages.map(m => ({...m, isPlayingAudio: m.id === activePlayingAudioId && m.isPlayingAudio }))} 
             isBotTyping={isBotTyping} 
-            onPlayAudio={(uri, lang) => {
-                const messageToPlay = messages.find(m => m.audioDataUri === uri && !m.isUser);
-                if(messageToPlay) handlePlayAudio(uri, lang, messageToPlay.id);
+            onPlayAudio={(uri, lang, messageId) => { // Ensure messageId is passed from MessageBubble
+                if(messageId) handlePlayAudio(uri, lang, messageId);
             }}
         />
         <ChatInput

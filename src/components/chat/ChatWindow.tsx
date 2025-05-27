@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Message } from '@/types';
@@ -9,7 +10,7 @@ import { Loader2 } from 'lucide-react';
 interface ChatWindowProps {
   messages: Message[];
   isBotTyping: boolean;
-  onPlayAudio: (audioDataUri: string, language: 'en' | 'te') => void;
+  onPlayAudio: (audioDataUri: string, language: 'en' | 'te', messageId: string) => void;
 }
 
 export function ChatWindow({ messages, isBotTyping, onPlayAudio }: ChatWindowProps) {

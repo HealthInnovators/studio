@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { Message } from '@/types';
@@ -8,15 +9,15 @@ import { Bot, User, Volume2, Loader2 } from 'lucide-react';
 
 interface MessageBubbleProps {
   message: Message;
-  onPlayAudio: (audioDataUri: string, language: 'en' | 'te') => void;
+  onPlayAudio: (audioDataUri: string, language: 'en' | 'te', messageId: string) => void;
 }
 
 export function MessageBubble({ message, onPlayAudio }: MessageBubbleProps) {
-  const { text, isUser, timestamp, language, audioDataUri, isPlayingAudio } = message;
+  const { id, text, isUser, timestamp, language, audioDataUri, isPlayingAudio } = message;
 
   const handlePlayAudio = () => {
     if (audioDataUri) {
-      onPlayAudio(audioDataUri, language);
+      onPlayAudio(audioDataUri, language, id);
     }
   };
 
