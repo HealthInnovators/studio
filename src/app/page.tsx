@@ -43,13 +43,16 @@ export default function AskTeRAPage() {
         const voices = window.speechSynthesis.getVoices();
         if (voices.length > 0) {
           setBrowserVoices(voices);
+          console.log('Browser voices loaded on init/change:', voices.map(v => ({name: v.name, lang: v.lang, default: v.default })));
+        } else {
+          console.log('Browser voices list initially empty during loadAndSetVoices, waiting for onvoiceschanged.');
         }
       }
     };
 
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = loadAndSetVoices;
-      loadAndSetVoices();
+      loadAndSetVoices(); // Attempt to load immediately
     }
     
     const welcomeLang = selectedVoiceLanguage; 
@@ -226,50 +229,73 @@ export default function AskTeRAPage() {
         const textToSpeak = decodeURIComponent(audioDataUri.split(',')[1]);
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
 
+        // Attempt to get the most current list of voices
+        let currentVoices = [];
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            currentVoices = window.speechSynthesis.getVoices();
+        }
+        
+        // Use fresh voices if available, otherwise fallback to state-cached voices
+        const voicesToSearch = currentVoices.length > 0 ? currentVoices : browserVoices;
+
+        console.log('TTS: Available voices for playback attempt:', voicesToSearch.map(v => ({name: v.name, lang: v.lang, default: v.default })));
+
         let chosenVoice: SpeechSynthesisVoice | undefined = undefined;
 
         if (language === 'te') {
             utterance.lang = 'te-IN';
-            // Try to find a female Telugu voice
-            chosenVoice = browserVoices.find(voice => 
-                (voice.lang === 'te-IN' || voice.lang.startsWith('te-')) && 
+            console.log('TTS: Attempting to find Telugu voice...');
+            chosenVoice = voicesToSearch.find(voice => 
+                (voice.lang === 'te-IN' || voice.lang.toLowerCase().startsWith('te-')) && 
                 voice.name.toLowerCase().includes('female')
             );
-            // If no female Telugu voice, find any Telugu voice
             if (!chosenVoice) {
-                chosenVoice = browserVoices.find(voice => voice.lang === 'te-IN' || voice.lang.startsWith('te-'));
+                chosenVoice = voicesToSearch.find(voice => 
+                    voice.lang === 'te-IN' || voice.lang.toLowerCase().startsWith('te-')
+                );
             }
 
             if (chosenVoice) {
                 utterance.voice = chosenVoice;
+                console.log('TTS: Using Telugu voice:', {name: chosenVoice.name, lang: chosenVoice.lang});
             } else {
-                // No Telugu voice found at all
-                if (browserVoices.length > 0 && !teluguVoiceWarningShown) {
+                console.log('TTS: No specific Telugu voice found in browser. Relying on lang attribute for Telugu.');
+                if (voicesToSearch.length > 0 && !teluguVoiceWarningShown) {
                     toast({
                         title: "Telugu Speech Note",
-                        description: "Your browser may not have a dedicated Telugu voice. Speech quality might be affected or a default voice may be used.",
+                        description: "Your browser may not have a dedicated Telugu voice installed or enabled. Speech quality might be affected or a default voice may be used.",
                         duration: 7000,
                     });
                     setTeluguVoiceWarningShown(true);
+                } else if (voicesToSearch.length === 0 && !teluguVoiceWarningShown) {
+                     console.log('TTS: Browser voice list is empty. Speech synthesis might not work or is still loading voices.');
+                      toast({
+                        title: "Speech Voice Loading",
+                        description: "Browser voices might still be loading. If speech doesn't work, please try again shortly.",
+                        duration: 5000,
+                    });
+                    setTeluguVoiceWarningShown(true); // Avoid repeated toasts for this session
                 }
             }
         } else { // For English
             utterance.lang = 'en-US';
-            // Try to find a female English voice
-            chosenVoice = browserVoices.find(voice => 
-                (voice.lang === 'en-US' || voice.lang.startsWith('en-')) && 
+            console.log('TTS: Attempting to find English voice...');
+            chosenVoice = voicesToSearch.find(voice => 
+                (voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-')) && 
                 voice.name.toLowerCase().includes('female')
             );
-            // If no female English voice, find any default English voice, then any English voice
             if (!chosenVoice) {
-                chosenVoice = browserVoices.find(voice => (voice.lang === 'en-US' || voice.lang.startsWith('en-')) && voice.default);
+                chosenVoice = voicesToSearch.find(voice => (voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-')) && voice.default);
             }
             if (!chosenVoice) {
-                chosenVoice = browserVoices.find(voice => voice.lang === 'en-US' || voice.lang.startsWith('en-'));
+                chosenVoice = voicesToSearch.find(voice => voice.lang === 'en-US' || voice.lang.toLowerCase().startsWith('en-'));
             }
 
             if (chosenVoice) {
                 utterance.voice = chosenVoice;
+                 console.log('TTS: Using English voice:', {name: chosenVoice.name, lang: chosenVoice.lang});
+            } else {
+                console.log('TTS: No specific English voice found. Relying on lang attribute for English.');
             }
         }
 
@@ -279,7 +305,7 @@ export default function AskTeRAPage() {
         };
         utterance.onerror = (e) => {
             console.error("Speech synthesis error:", e);
-            toast({ title: "Speech Error", description: "Could not speak the response.", variant: "destructive" });
+            toast({ title: "Speech Error", description: `Could not speak the response. Error: ${e.error}`, variant: "destructive" });
             playAudioForMessage(messageId, false);
             setActivePlayingAudioId(null);
         };
@@ -319,7 +345,7 @@ export default function AskTeRAPage() {
           selectedVoiceLanguage={selectedVoiceLanguage}
           onVoiceLanguageChange={(lang) => {
             setSelectedVoiceLanguage(lang);
-            setTeluguVoiceWarningShown(false); 
+            setTeluguVoiceWarningShown(false); // Reset warning when language changes
           }}
           isProcessing={isBotTyping}
           isTranscribing={isTranscribing}
