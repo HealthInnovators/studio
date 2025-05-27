@@ -35,21 +35,27 @@ export default function AskTeRAPage() {
   const { toast } = useToast();
   const { isRecording, startRecording, stopRecording, error: recorderError } = useAudioRecorder();
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  // Use a local variable for utterance to ensure a new one is created each time.
+  // The ref can be used to cancel if needed, but direct creation is cleaner for speaking.
+  // const speechSynthesisUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
-    const loadVoices = () => {
+    const loadAndSetVoices = () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
-        const availableVoices = window.speechSynthesis.getVoices();
-        if (availableVoices.length > 0) {
-          setBrowserVoices(availableVoices);
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          setBrowserVoices(voices);
         }
+        // If voices is empty, onvoiceschanged should ideally fire when they are ready.
+        // If it never fires or browser has no voices, browserVoices will remain empty.
       }
     };
 
-    loadVoices(); // Initial attempt
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = loadVoices; // Listener for changes
+      // onvoiceschanged is the most reliable event for when voices are ready or change.
+      window.speechSynthesis.onvoiceschanged = loadAndSetVoices;
+      // Attempt to load them immediately as well, as some browsers might have them ready.
+      loadAndSetVoices();
     }
     
     // Send initial welcome message from TeRA
@@ -62,15 +68,18 @@ export default function AskTeRAPage() {
       language: welcomeLang,
     };
     
-    generateAndSetAudio(botMessage);
+    // Don't auto-add to messages here, generateAndSetAudio will do it
+    // setMessages([botMessage]); 
+    generateAndSetAudio(botMessage); // This will add the message after attempting TTS
     
     return () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.onvoiceschanged = null; // Cleanup
+        window.speechSynthesis.cancel(); // Cancel any ongoing speech on unmount
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Welcome message effect, selectedVoiceLanguage is fixed at mount here for welcome.
+  }, []); // Welcome message effect runs once on mount.
 
 
   useEffect(() => {
@@ -88,25 +97,31 @@ export default function AskTeRAPage() {
      if (!message.isUser) {
       try {
         const ttsResult = await textToSpeechOutput({ text: message.text, language: message.language });
+        // Ensure message is added to state before attempting to update it with audioDataUri
         setMessages(prev => {
-            const existingMessage = prev.find(m => m.id === message.id);
-            if (existingMessage) {
-                return prev.map(m => m.id === message.id ? {...m, audioDataUri: ttsResult.audioDataUri} : m);
+            if (!prev.find(m => m.id === message.id)) { // If message not already present
+                return [...prev, {...message, audioDataUri: ttsResult.audioDataUri}];
             }
-            return [...prev, {...message, audioDataUri: ttsResult.audioDataUri}];
+            // If message was already added (e.g. optimistic update), update it
+            return prev.map(m => m.id === message.id ? {...m, audioDataUri: ttsResult.audioDataUri} : m);
         });
       } catch (error) {
         console.error("Error generating speech:", error);
         toast({ title: "Speech Generation Error", description: "Failed to generate audio for the bot's response.", variant: "destructive" });
-        setMessages(prev => {
+        setMessages(prev => { // Ensure message is added even if TTS fails
             if (!prev.find(m => m.id === message.id)) {
                 return [...prev, message];
             }
             return prev;
         });
       }
-    } else {
-       setMessages(prev => [...prev, message]);
+    } else { // For user messages, just add to state
+       setMessages(prev => {
+         if (!prev.find(m => m.id === message.id)) {
+           return [...prev, message];
+         }
+         return prev;
+       });
     }
   }
 
@@ -118,6 +133,7 @@ export default function AskTeRAPage() {
       timestamp: new Date().toISOString(),
       language,
     };
+    // For user messages, add them immediately. Bot messages are handled by generateAndSetAudio.
     if (isUser) {
        setMessages(prev => [...prev, newMessage]);
     }
@@ -128,7 +144,7 @@ export default function AskTeRAPage() {
     if (!textFromInput.trim()) return;
 
     const userLang = detectLanguage(textFromInput);
-    addMessage(textFromInput, true, userLang);
+    addMessage(textFromInput, true, userLang); // User message added here
     setInputValue('');
     setIsBotTyping(true);
 
@@ -158,7 +174,7 @@ export default function AskTeRAPage() {
       }
     }
     
-    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300)); // Simulate thinking
 
     const botMessage = { 
       id: Date.now().toString() + '_bot_' + Math.random().toString(36).substring(2,9),
@@ -168,6 +184,7 @@ export default function AskTeRAPage() {
       language: botResponseLang,
     };
     
+    // Bot message will be added to state by generateAndSetAudio
     await generateAndSetAudio(botMessage);
 
     setIsBotTyping(false);
@@ -199,13 +216,13 @@ export default function AskTeRAPage() {
       audioRef.current.src = '';
     }
     if (window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+        window.speechSynthesis.cancel(); // Cancel any previous speech
     }
 
     playAudioForMessage(messageId, true);
     setActivePlayingAudioId(messageId);
 
-    if (audioDataUri.startsWith('data:audio')) {
+    if (audioDataUri.startsWith('data:audio')) { // For actual server-generated audio files
       audioRef.current = new Audio(audioDataUri);
       audioRef.current.play()
         .catch(e => {
@@ -218,34 +235,48 @@ export default function AskTeRAPage() {
         playAudioForMessage(messageId, false);
         setActivePlayingAudioId(null);
       };
-    } else if (audioDataUri.startsWith('data:text/plain')) { 
+    } else if (audioDataUri.startsWith('data:text/plain')) { // For browser-based TTS
         const textToSpeak = decodeURIComponent(audioDataUri.split(',')[1]);
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
 
-        if (language === 'te' && !teluguVoiceWarningShown && browserVoices.length > 0) {
-          const teluguVoice = browserVoices.find(voice => voice.lang === 'te-IN' || voice.lang.startsWith('te-'));
-          if (!teluguVoice) {
-            toast({
-              title: "Telugu Speech Note",
-              description: "Your browser may not have a dedicated Telugu voice. Speech quality might be affected or a default voice may be used.",
-              duration: 7000, 
-            });
-            setTeluguVoiceWarningShown(true); 
-          }
+        if (language === 'te') {
+            utterance.lang = 'te-IN'; // Set language hint
+            // Try to find and set a specific Telugu voice
+            const teluguVoice = browserVoices.find(voice => voice.lang === 'te-IN' || voice.lang.startsWith('te-'));
+            if (teluguVoice) {
+                utterance.voice = teluguVoice;
+            } else {
+                // Only show warning if voices have been loaded (browserVoices is not empty) but no Telugu voice was found
+                if (browserVoices.length > 0 && !teluguVoiceWarningShown) {
+                    toast({
+                        title: "Telugu Speech Note",
+                        description: "Your browser may not have a dedicated Telugu voice. Speech quality might be affected or a default voice may be used.",
+                        duration: 7000,
+                    });
+                    setTeluguVoiceWarningShown(true);
+                }
+                // If browserVoices is empty, it means voices might not have loaded yet or none exist.
+                // The .lang = 'te-IN' is the best effort in that case.
+            }
+        } else { // For English or other languages, default to en-US or try to find a specific English voice
+            utterance.lang = 'en-US';
+            const englishVoice = browserVoices.find(voice => voice.lang === 'en-US' || (voice.default && voice.lang.startsWith('en')));
+            if (englishVoice) {
+                utterance.voice = englishVoice;
+            }
         }
 
-        speechSynthesisRef.current = new SpeechSynthesisUtterance(textToSpeak);
-        speechSynthesisRef.current.lang = language === 'te' ? 'te-IN' : 'en-US';
-        speechSynthesisRef.current.onend = () => {
+        utterance.onend = () => {
             playAudioForMessage(messageId, false);
             setActivePlayingAudioId(null);
         };
-        speechSynthesisRef.current.onerror = (e) => {
+        utterance.onerror = (e) => {
             console.error("Speech synthesis error:", e);
             toast({ title: "Speech Error", description: "Could not speak the response.", variant: "destructive" });
             playAudioForMessage(messageId, false);
             setActivePlayingAudioId(null);
         };
-        window.speechSynthesis.speak(speechSynthesisRef.current);
+        window.speechSynthesis.speak(utterance);
     } else {
         console.warn("Unsupported audioDataUri format:", audioDataUri);
         toast({ title: "Playback Error", description: "Unsupported audio format.", variant: "warning" });
