@@ -19,7 +19,6 @@ import {
   defaultResponses,
   welcomeMessages
 } from '@/lib/chat-logic';
-import Image from 'next/image';
 
 // Define props for a Next.js Page component in the App Router
 interface AskTeRAPageProps {
@@ -334,8 +333,8 @@ export default function AskTeRAPage({ params, searchParams }: AskTeRAPageProps) 
       <Card className="w-full max-w-2xl h-[calc(100vh-40px)] md:h-[700px] shadow-2xl flex flex-col rounded-xl overflow-hidden">
         <CardHeader className="bg-primary text-primary-foreground p-4">
           <div className="flex items-center space-x-3">
-            <Image src="https://placehold.co/40x40.png" alt="TeRA Logo" width={40} height={40} className="rounded-full" data-ai-hint="logo letter T" />
-            <CardTitle className="text-xl font-semibold">Ask TeRA</CardTitle>
+             <img src="/chat-icon.png" alt="Chat Icon" className="h-6 w-6 mr-2" />
+            <CardTitle className="text-xl font-semibold">Ask TeRA</CardTitle> 
           </div>
         </CardHeader>
         <ChatWindow
