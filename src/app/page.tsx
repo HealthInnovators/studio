@@ -230,7 +230,7 @@ export default function AskTeRAPage() {
         const utterance = new SpeechSynthesisUtterance(textToSpeak);
 
         // Attempt to get the most current list of voices
-        let currentVoices = [];
+        let currentVoices: SpeechSynthesisVoice[] = [];
         if (typeof window !== 'undefined' && window.speechSynthesis) {
             currentVoices = window.speechSynthesis.getVoices();
         }
@@ -304,7 +304,7 @@ export default function AskTeRAPage() {
             setActivePlayingAudioId(null);
         };
         utterance.onerror = (e) => {
-            console.error("Speech synthesis error:", e);
+            console.error("Speech synthesis error:", e.error, e);
             toast({ title: "Speech Error", description: `Could not speak the response. Error: ${e.error}`, variant: "destructive" });
             playAudioForMessage(messageId, false);
             setActivePlayingAudioId(null);
