@@ -39,9 +39,9 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
 
     /* Bot message bubble colors - Light Theme */
-    --bot-message-background: 140 55% 91%; /* A soft, light green */
-    --bot-message-foreground: 140 35% 20%; /* A darker, readable green for text */
-    --bot-message-border: 140 45% 82%;   /* A slightly more saturated/darker green for the border */
+    --bot-message-background: 120 50% 30%; /* Dark Green */
+    --bot-message-foreground: 0 0% 98%;   /* Almost White (for text on dark green) */
+    --bot-message-border: 120 50% 25%;     /* Slightly Darker Green for border */
   }
   .dark {
     --background: 210 10% 10%; /* Dark blue-grey */
@@ -78,9 +78,9 @@
     --sidebar-ring: 217.2 91.2% 59.8%;
 
     /* Bot message bubble colors - Dark Theme */
-    --bot-message-background: 140 30% 20%; /* A deep, desaturated green for the background */
-    --bot-message-foreground: 140 50% 88%; /* A light, clear green for text */
-    --bot-message-border: 140 30% 30%;   /* A subtle border, slightly darker than the dark background */
+    --bot-message-background: 120 40% 20%; /* Deep, desaturated dark green */
+    --bot-message-foreground: 120 40% 85%; /* Light, desaturated green for text */
+    --bot-message-border: 120 40% 15%;     /* Very dark green border */
   }
 }
 
